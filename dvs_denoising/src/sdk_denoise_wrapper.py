@@ -1,32 +1,26 @@
 # sdk_denoise_wrapper.py
-
 from axon_sdk.primitives.networks import SpikingNetworkModule
 from accelerated_denoiser import denoise_events
 from convert_events_to_frames import events_to_frames
-import time
 
 class DenoisingPreprocessor(SpikingNetworkModule):
     def __init__(self, encoder):
         super().__init__()
-        self.encoder = encoder  # required by Axon
-        self.stats = {}  # populated during processing
+        self.encoder = encoder
+        self.stats = {}
 
     def process(self, raw_events):
         print("[Axon] Preprocessing events...")
+        n_raw = len(raw_events)
 
-        # --- Denoising ---
-        t0 = time.time()
         filtered = denoise_events(raw_events)
-        t1 = time.time()
+        n_kept = len(filtered)
+        self.stats['events_kept'] = n_kept
+        self.stats['events_removed'] = n_raw - n_kept
+        self.stats['percent_retained'] = round(100 * n_kept / n_raw, 2)
 
-        # --- Frame Generation ---
-        frames, _ = events_to_frames(filtered, dt=1000.0)
-        t2 = time.time()
-
-        # --- Stats ---
-        self.stats['events_kept'] = len(filtered)
-        self.stats['events_removed'] = len(raw_events) - len(filtered)
-        self.stats['denoise_time_sec'] = round(t1 - t0, 4)
-        self.stats['frame_gen_time_sec'] = round(t2 - t1, 4)
+        frames, edges = events_to_frames(filtered, dt=1000.0)
+        self.stats['frame_count'] = len(frames)
+        self.stats['frame_duration_us'] = round(edges[1] - edges[0], 2) if len(edges) > 1 else None
 
         return frames

@@ -6,7 +6,7 @@ axon_pipeline_performance.py - Benchmarks Axon SDK pipeline w/ custom denoiser
 Steps:
 - Load HDF5 event data
 - Convert to list-of-dicts format
-- Run DenoisingPreprocessor from axos_sdk_denoise_module
+- Run DenoisingPreprocessor from sdk_denoise_wrapper
 - Convert output to grayscale frames
 - Save frames to video
 - Output CSV performance report
@@ -24,22 +24,17 @@ from axon_sdk.primitives.encoders import DataEncoder
 from sdk_denoise_wrapper import DenoisingPreprocessor
 from main import h5_to_npy
 
-# === Helpers ===
+
 def structured_to_dicts(data):
     """Convert structured NumPy array to list of event dictionaries."""
     print("Converting structured array to dicts...")
-    return [{'x': int(e['x']), 'y': int(e['y']), 't': float(e['t']), 'p': int(e['p'])} for e in tqdm(data, desc="Parsing", unit="event")]
+    return [{'x': int(e['x']), 'y': int(e['y']), 't': float(e['t']), 'p': int(e['p'])}
+            for e in tqdm(data, desc="Parsing", unit="event")]
 
-def save_video(frames, path="data/output.mp4", fps=30, skip_empty=True, min_intensity_threshold=1e-3):
+
+def save_video(frames, path="data/axon_sdk_output.mp4", fps=30, skip_empty=True, min_intensity_threshold=1e-3):
     """
     Save grayscale frames as black-and-white video.
-
-    Args:
-        frames: list or np.ndarray of 2D arrays (grayscale)
-        path: output .mp4 path
-        fps: frames per second
-        skip_empty: whether to skip empty (all-zero) or near-zero frames
-        min_intensity_threshold: minimum total intensity to consider a frame non-empty
     """
     if len(frames) == 0:
         print("No frames to save.")
@@ -51,29 +46,30 @@ def save_video(frames, path="data/output.mp4", fps=30, skip_empty=True, min_inte
     saved_count = 0
     for f in tqdm(frames, desc="Writing video"):
         if skip_empty and np.sum(f) < min_intensity_threshold:
-            continue  # Skip black frames
-
-        f_uint8 = (255 * f / (f.max() if f.max() > 0 else 1)).astype(np.uint8)
+            continue
+        norm = f.max() if f.max() > 0 else 1
+        f_uint8 = (255 * f / norm).astype(np.uint8)
         out.write(f_uint8)
         saved_count += 1
 
     out.release()
-    print(f"Video saved: {path} ({saved_count} frames written)")
+    print(f"✅ Video saved: {path} ({saved_count} frames written)")
 
 
 def save_csv(report, path="data/axon_performance_report.csv"):
+    """Save the performance dictionary to CSV."""
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(report.keys())
         writer.writerow(report.values())
-    print(f"CSV saved: {path}")
+    print(f"✅ CSV saved: {path}")
 
-# === Main pipeline ===
+
 if __name__ == "__main__":
     report = {}
 
-    # --- Load and parse events ---
-    print("\nLoading HDF5...")
+    # === Load + Parse Events ===
+    print("📂 Loading HDF5...")
     t0 = time.time()
     raw = h5_to_npy('../data/9_2.h5', 'events')
     t1 = time.time()
@@ -81,28 +77,39 @@ if __name__ == "__main__":
     t2 = time.time()
 
     report['events_loaded'] = len(events)
-    report['load_time_sec'] = round(t1 - t0, 3)
-    report['parse_time_sec'] = round(t2 - t1, 3)
+    report['load_time_sec'] = round(t1 - t0, 4)
+    report['parse_time_sec'] = round(t2 - t1, 4)
 
-    # --- Setup Axon pipeline ---
+    # === Initialize Axon Pipeline ===
     encoder = DataEncoder(Tmin=10.0, Tcod=100.0)
     module = DenoisingPreprocessor(encoder)
     sim = Simulator(module, encoder)
 
-    # --- Denoising + encoding ---
-    print("\nRunning Axon pipeline...")
+    # === Process Events ===
+    print("⚙️  Running Axon pipeline...")
     t3 = time.time()
     frames = module.process(events)
     t4 = time.time()
 
     report['n_frames'] = len(frames)
-    report['axon_time_sec'] = round(t4 - t3, 3)
-    report.update(module.stats)  # if your module provides extra stats
+    report['axon_time_sec'] = round(t4 - t3, 4)
 
-    # --- Save video + CSV ---
-    save_video(frames, path="../data/output.mp4", fps=30)
-    save_csv(report, path="../data/axon_performance_report.csv")
+    # Add any available internal stats
+    if hasattr(module, "stats") and isinstance(module.stats, dict):
+        report.update(module.stats)
 
-    print("\n=== Done ===")
+    # Optional: Try to record encoder output
+    try:
+        spikes = encoder.encode(events)
+        report['n_spikes'] = len(spikes)
+    except Exception:
+        report['n_spikes'] = "N/A"
+
+    # === Save Results ===
+    save_video(frames, path="data/output.mp4", fps=30)
+    save_csv(report, path="data/axon_performance_report.csv")
+
+    # === Final Printout ===
+    print("\n=== ✅ Done ===")
     for k, v in report.items():
-        print(f"{k:20}: {v}")
+        print(f"{k:24}: {v}")

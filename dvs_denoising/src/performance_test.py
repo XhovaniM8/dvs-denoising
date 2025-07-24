@@ -1,34 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-main.py - Event Denoising and Visualization Pipeline
+performance_test.py - Benchmarks DVS denoising pipeline
 
-This script loads a DVS (Dynamic Vision Sensor) event stream from an HDF5 file,
-applies spatiotemporal denoising, converts events into frames, and saves
-videos comparing the raw and filtered data.
+Measures:
+- Load + parse time
+- Denoising time
+- Frame generation time
+- Event statistics
 
-Modules:
-- denoise_events.py: Implements a spatiotemporal density-based denoiser
-- convert_events_to_frames.py: Converts events into frames for visualization
-- plot.py: Optional event scatter plotting
-- imageio: Used for video export
-- tqdm: Displays progress bar during filtering and matching
-
-Usage:
-    $ python main.py
+Outputs:
+- CSV report to `performance_report.csv`
 
 Author: Xhovani Mali
 """
 
 import h5py
-import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import imageio
-
+import time
+import csv
 from accelerated_denoiser import denoise_events
 from convert_events_to_frames import events_to_frames
-from plot import plot_events
 
 
 def h5_to_npy(file_path, name):
@@ -40,65 +31,53 @@ def structured_to_dicts(data):
     return [{'x': int(e['x']), 'y': int(e['y']), 't': float(e['t']), 'p': int(e['p'])} for e in data]
 
 
-def save_frames_to_video(frames, out_path="output.mp4", fps=30, skip_empty=True, threshold=1e-3):
-    """Save a stack of grayscale [0,1] frames to .mp4, skipping empty ones."""
-    frames = np.clip(frames, 0, 1)
-    frames8 = (frames * 255).astype(np.uint8)
-
-    writer = imageio.get_writer(out_path, fps=fps, codec='libx264')
-    skipped = 0
-    for i, fr in enumerate(frames8):
-        if skip_empty and np.sum(fr) < threshold * fr.size:
-            skipped += 1
-            continue
-        writer.append_data(fr)
-    writer.close()
-    print(f"Saved video to: {out_path} ({len(frames) - skipped} frames written, {skipped} skipped)")
+def save_csv(report, path="../data/performance_report.csv"):
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(report.keys())
+        writer.writerow(report.values())
+    print(f"Saved performance report to {path}")
 
 
 def main():
-    print("Loading data...")
+    report = {}
+
+    # --- Load and parse ---
+    print("Loading HDF5...")
+    t0 = time.time()
     raw_data = h5_to_npy('../data/9_2.h5', 'events')
-    print(f"Loaded {len(raw_data):,} events")
-    print(f"Shape: {raw_data.shape}, Dtype: {raw_data.dtype}")
-    print("Sample:", raw_data[0])
-
+    t1 = time.time()
     events = structured_to_dicts(raw_data)
+    t2 = time.time()
 
-    print("\nDenoising events...")
+    report['events_loaded'] = len(events)
+    report['load_time_sec'] = round(t1 - t0, 4)
+    report['parse_time_sec'] = round(t2 - t1, 4)
+
+    # --- Denoise ---
+    print("Running denoiser...")
+    t3 = time.time()
     filtered = denoise_events(events, tau_d=10000.0, delta_d=0.05)
-    print(f"Original: {len(events):,} | Kept: {len(filtered):,} | Removed: {len(events) - len(filtered):,}")
+    t4 = time.time()
+    report['denoise_time_sec'] = round(t4 - t3, 4)
+    report['events_kept'] = len(filtered)
+    report['events_removed'] = len(events) - len(filtered)
 
-    print("Extracting removed events...")
-    kept_set = set((e['x'], e['y'], e['t']) for e in filtered)
-    removed_events = [e for e in tqdm(events, desc="Finding removed", unit="event")
-                      if (e['x'], e['y'], e['t']) not in kept_set]
-
-    print("\nGenerating frames...")
+    # --- Frame generation ---
+    print("Generating frames...")
     dt = 1000.0
-    raw_frames, _ = events_to_frames(events, dt=dt)
+    t5 = time.time()
     filtered_frames, _ = events_to_frames(filtered, dt=dt)
-    print(f"Generated {len(raw_frames)} raw frames and {len(filtered_frames)} filtered frames.")
+    t6 = time.time()
+    report['frame_gen_time_sec'] = round(t6 - t5, 4)
+    report['n_frames'] = len(filtered_frames)
 
-    PREVIEW_FRAMES = True
-    if PREVIEW_FRAMES:
-        n_show = min(5, len(filtered_frames))
-        for i in range(n_show):
-            fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-            axs[0].imshow(raw_frames[i], cmap='gray', origin='lower')
-            axs[0].set_title(f"Raw Frame {i}")
-            axs[0].axis('off')
+    # --- Output ---
+    save_csv(report)
 
-            axs[1].imshow(filtered_frames[i], cmap='gray', origin='lower')
-            axs[1].set_title(f"Filtered Frame {i}")
-            axs[1].axis('off')
-
-            plt.tight_layout()
-            plt.show()
-
-    print("Saving videos...")
-    save_frames_to_video(raw_frames, "raw_video.mp4", fps=60)
-    save_frames_to_video(filtered_frames, "filtered_video.mp4", fps=60)
+    print("\n=== Benchmark Complete ===")
+    for k, v in report.items():
+        print(f"{k:22}: {v}")
 
 
 if __name__ == "__main__":
