@@ -1,26 +1,96 @@
-# sdk_denoise_wrapper.py
 from axon_sdk.primitives.networks import SpikingNetworkModule
-from accelerated_denoiser import denoise_events
-from convert_events_to_frames import events_to_frames
+from axon_sdk.primitives.elements import ExplicitNeuron
 
-class DenoisingPreprocessor(SpikingNetworkModule):
-    def __init__(self, encoder):
-        super().__init__()
+
+class SpatialSpikingDenoisingNetwork(SpikingNetworkModule):
+    def __init__(self, encoder, width, height):
+        super().__init__("SpatialSpikingDenoiser")
         self.encoder = encoder
-        self.stats = {}
+        self.output_width = width
+        self.output_height = height
+        self.input_neurons = {}
+        self.filter_neurons = {}
+        self.output_neurons = {}
+        self.output_uid_to_xy = {}
 
-    def process(self, raw_events):
-        print("[Axon] Preprocessing events...")
-        n_raw = len(raw_events)
+        for y in range(height):
+            for x in range(width):
+                # Even lower thresholds and adjusted parameters for reliable propagation
+                n_input = self.add_neuron(Vt=3, tm=15, tf=3, Vreset=0, neuron_name=f"input_{x}_{y}")
+                n_filter = self.add_neuron(Vt=2, tm=15, tf=3, Vreset=0, neuron_name=f"filter_{x}_{y}")
+                n_output = self.add_neuron(Vt=2, tm=15, tf=3, Vreset=0, neuron_name=f"output_{x}_{y}")
 
-        filtered = denoise_events(raw_events)
-        n_kept = len(filtered)
-        self.stats['events_kept'] = n_kept
-        self.stats['events_removed'] = n_raw - n_kept
-        self.stats['percent_retained'] = round(100 * n_kept / n_raw, 2)
+                # Much stronger weights for reliable signal transmission
+                self.connect_neurons(n_input, n_filter, "ge", weight=15.0, delay=0.1)
+                self.connect_neurons(n_filter, n_output, "ge", weight=15.0, delay=0.1)
 
-        frames, edges = events_to_frames(filtered, dt=1000.0)
-        self.stats['frame_count'] = len(frames)
-        self.stats['frame_duration_us'] = round(edges[1] - edges[0], 2) if len(edges) > 1 else None
+                self.input_neurons[(x, y)] = n_input
+                self.filter_neurons[(x, y)] = n_filter
+                self.output_neurons[(x, y)] = n_output
 
-        return frames
+                # Map both integer and string UIDs to coordinates
+                self.output_uid_to_xy[n_output.uid] = (x, y)
+                # Also map string representation if it's different
+                if hasattr(n_output, '__str__'):
+                    self.output_uid_to_xy[str(n_output.uid)] = (x, y)
+
+    def get_input_neuron(self, x, y):
+        return self.input_neurons.get((x, y), None)
+
+    def output_coord(self, uid):
+        """Get coordinates for a neuron UID, handling both int and string UIDs."""
+        # Try direct lookup first
+        if uid in self.output_uid_to_xy:
+            return self.output_uid_to_xy[uid]
+
+        # Try string conversion
+        str_uid = str(uid)
+        if str_uid in self.output_uid_to_xy:
+            return self.output_uid_to_xy[str_uid]
+
+        # Parse the UID string to extract coordinates if it follows the pattern
+        if isinstance(uid, str) and '_output_' in uid:
+            try:
+                # Extract coordinates from string like "(m0,n123)_output_x_y"
+                parts = uid.split('_output_')
+                if len(parts) == 2:
+                    coords = parts[1].split('_')
+                    if len(coords) == 2:
+                        x, y = int(coords[0]), int(coords[1])
+                        if 0 <= x < self.output_width and 0 <= y < self.output_height:
+                            return (x, y)
+            except (ValueError, IndexError):
+                pass
+
+        # If we still can't find it, it might be an input or filter neuron
+        # Let's check if it's an output neuron by examining all output neurons
+        for (x, y), neuron in self.output_neurons.items():
+            if neuron.uid == uid or str(neuron.uid) == str(uid):
+                self.output_uid_to_xy[uid] = (x, y)  # Cache it for next time
+                return (x, y)
+
+        return (-1, -1)
+
+    def debug_neuron_info(self):
+        """Debug function to print neuron UID information."""
+        print("\n=== Debug: Neuron UID Information ===")
+        print(f"Network has {len(self.output_neurons)} output neurons")
+        print("Sample output neuron UIDs:")
+        count = 0
+        for (x, y), neuron in self.output_neurons.items():
+            if count < 5:
+                print(f"  Position ({x},{y}): UID = {repr(neuron.uid)} (type: {type(neuron.uid)})")
+                count += 1
+            else:
+                break
+
+        print(f"\nUID mapping dictionary has {len(self.output_uid_to_xy)} entries")
+        print("Sample mappings:")
+        count = 0
+        for uid, coords in self.output_uid_to_xy.items():
+            if count < 5:
+                print(f"  {repr(uid)} -> {coords}")
+                count += 1
+            else:
+                break
+        print("=" * 40)
