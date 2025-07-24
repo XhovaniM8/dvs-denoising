@@ -1,2 +1,2 @@
 events_loaded,load_time_sec,parse_time_sec,denoise_time_sec,events_kept,events_removed,frame_gen_time_sec,n_frames
-1832658,0.1107,2.4972,17.8918,468114,1364544,18.4598,6230
+1832658,0.1131,2.4379,17.5474,468114,1364544,4.3086,6230

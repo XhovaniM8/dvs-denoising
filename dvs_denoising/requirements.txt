@@ -1,16 +1,23 @@
+-e git+https://github.com/XhovaniM8/axon-sdk.git@3a84c08dbe9447a8a5b9fcefc998b99737285b75#egg=axon_sdk
 contourpy==1.3.2
 cycler==0.12.1
 fonttools==4.59.0
 h5py==3.14.0
 imageio==2.37.0
+imageio-ffmpeg==0.6.0
+iniconfig==2.1.0
 kiwisolver==1.4.8
 llvmlite==0.44.0
 matplotlib==3.10.3
 numba==0.61.2
 numpy==2.2.6
+opencv-python==4.12.0.88
 packaging==25.0
 pillow==11.3.0
+pluggy==1.6.0
+Pygments==2.19.2
 pyparsing==3.2.3
+pytest==8.4.1
 python-dateutil==2.9.0.post0
 six==1.17.0
 tqdm==4.67.1
