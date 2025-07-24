@@ -90,10 +90,10 @@ The spike-based approach implements a spatial spiking neural network where:
 ### Traditional HOTS-based Approaches (Full Dataset: 1.8M events)
 | Implementation | Runtime | Memory Usage | Acceleration | Output Events |
 |---------------|---------|--------------|-------------|---------------|
-| Pure Python | ~65 min | High | 1x | 468,114 |
-| NumPy Vectorized | ~180 sec | Medium | ~20x | 468,114 |
+| Pure Python | 65 min | High | 1x |  |
+| NumPy Vectorized | ~180 sec | Medium | ~20x |  |
 | **Numba JIT** | **~17.8 sec** | **Low** | **~100x** | **468,114** |
-| TensorFlow GPU | ~25 sec | Medium | ~80x | 468,114 |
+| TensorFlow GPU | N/A | Medium | ~80x | N/A |
 
 ### Spike-based Approach (Full Dataset: 1.8M events, 569×480 resolution)
 | Implementation | Runtime | Memory Usage | Network Scale | Output Events |
