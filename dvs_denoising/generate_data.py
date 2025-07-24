@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 def generate_synthetic_events(num_valid=100, num_noise=50):
     # Generate valid events clustered near (40, 40)
