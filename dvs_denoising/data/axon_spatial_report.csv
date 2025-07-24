@@ -1,0 +1,2 @@
+events_loaded,events_used,inject_time_sec,total_spikes_injected,simulation_time_sec,output_events,spike_counts,n_frames
+1832658,5759,0.0227,17277,4.6214,337,"{'input': 17277, 'filter': 1978, 'output': 337}",1796

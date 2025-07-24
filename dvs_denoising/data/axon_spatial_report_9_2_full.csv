@@ -1,0 +1,2 @@
+events_loaded,events_used,resolution,inject_time_sec,total_spikes_injected,simulation_time_sec,output_events,spike_counts,n_frames
+1832658,1830777,569x480,10.5312,5492331,596.0857,144942,"{'input': 5492331, 'filter': 419799, 'output': 144942}",4082
